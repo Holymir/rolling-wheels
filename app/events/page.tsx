@@ -2,10 +2,9 @@
 
 import type React from "react"
 
-import { useState, useMemo } from "react"
-import { useAuth } from "@/lib/auth-context"
-import { mockEvents, mockMembers } from "@/lib/mock-data"
-import type { Event } from "@/lib/types"
+import { useState, useMemo, useEffect } from "react"
+import { useSession } from "next-auth/react"
+import { useRouter } from "next/navigation"
 import { Navigation } from "@/components/navigation"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -13,30 +12,84 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
-import { Calendar, MapPin, Clock, Users, Plus, List, CalendarDays } from "lucide-react"
+import { Calendar, MapPin, Clock, Users, Plus, List, CalendarDays, Loader2 } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 type ViewMode = "calendar" | "list"
 
+interface ApiEvent {
+  id: string
+  title: string
+  date: string
+  time: string
+  location: string
+  description: string
+  type: string
+  rsvps: Array<{
+    id: string
+    member: {
+      id: string
+      roadName: string
+    }
+  }>
+}
+
 export default function EventsPage() {
-  const { role } = useAuth()
-  const [events, setEvents] = useState<Event[]>(mockEvents)
+  const { data: session, status } = useSession()
+  const router = useRouter()
+  const [events, setEvents] = useState<ApiEvent[]>([])
+  const [isLoading, setIsLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
   const [viewMode, setViewMode] = useState<ViewMode>("list")
   const [isAddModalOpen, setIsAddModalOpen] = useState(false)
-  const [selectedEvent, setSelectedEvent] = useState<Event | null>(null)
+  const [selectedEvent, setSelectedEvent] = useState<ApiEvent | null>(null)
 
-  const isAdmin = role === "admin"
-  const currentUserId = mockMembers.find((m) => m.role === role)?.id || "1"
+  const isAdmin = session?.user?.role === "admin"
+  const isMember = session?.user?.role === "member"
+  const currentMemberId = session?.user?.memberId
+
+  // Redirect if not authenticated
+  useEffect(() => {
+    if (status === "unauthenticated") {
+      router.push("/")
+    }
+  }, [status, router])
+
+  // Fetch events
+  useEffect(() => {
+    if (status === "authenticated") {
+      fetchEvents()
+    }
+  }, [status])
+
+  const fetchEvents = async () => {
+    setIsLoading(true)
+    setError(null)
+    try {
+      const response = await fetch("/api/events")
+      if (!response.ok) {
+        throw new Error("Failed to fetch events")
+      }
+      const data = await response.json()
+      setEvents(data)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "An error occurred")
+      console.error("Error fetching events:", err)
+    } finally {
+      setIsLoading(false)
+    }
+  }
 
   // Filter events based on user role
   const visibleEvents = useMemo(() => {
+    const role = session?.user?.role
     return events.filter((event) => {
       if (event.type === "public") return true
       if (event.type === "member" && ["admin", "member", "prospect"].includes(role || "")) return true
       if (event.type === "private" && ["admin", "member"].includes(role || "")) return true
       return false
     })
-  }, [events, role])
+  }, [events, session?.user?.role])
 
   // Sort events by date
   const sortedEvents = useMemo(() => {
@@ -45,7 +98,7 @@ export default function EventsPage() {
 
   // Group events by month for calendar view
   const eventsByMonth = useMemo(() => {
-    const grouped: Record<string, Event[]> = {}
+    const grouped: Record<string, ApiEvent[]> = {}
     sortedEvents.forEach((event) => {
       const monthKey = new Date(event.date).toLocaleDateString("en-US", {
         year: "numeric",
@@ -57,40 +110,111 @@ export default function EventsPage() {
     return grouped
   }, [sortedEvents])
 
-  const handleAddEvent = (newEvent: Omit<Event, "id" | "rsvpList">) => {
-    const event: Event = {
-      ...newEvent,
-      id: Date.now().toString(),
-      rsvpList: [],
+  const handleAddEvent = async (newEvent: any) => {
+    try {
+      const response = await fetch("/api/events", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(newEvent),
+      })
+      if (!response.ok) {
+        throw new Error("Failed to create event")
+      }
+      setIsAddModalOpen(false)
+      fetchEvents()
+    } catch (err) {
+      console.error("Error creating event:", err)
+      alert("Failed to create event")
     }
-    setEvents([...events, event])
-    setIsAddModalOpen(false)
   }
 
-  const handleUpdateEvent = (updatedEvent: Event) => {
-    setEvents(events.map((e) => (e.id === updatedEvent.id ? updatedEvent : e)))
-    setSelectedEvent(null)
+  const handleUpdateEvent = async (updatedEvent: ApiEvent) => {
+    try {
+      const response = await fetch(`/api/events/${updatedEvent.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: updatedEvent.title,
+          date: updatedEvent.date,
+          time: updatedEvent.time,
+          location: updatedEvent.location,
+          description: updatedEvent.description,
+          type: updatedEvent.type,
+        }),
+      })
+      if (!response.ok) {
+        throw new Error("Failed to update event")
+      }
+      setSelectedEvent(null)
+      fetchEvents()
+    } catch (err) {
+      console.error("Error updating event:", err)
+      alert("Failed to update event")
+    }
   }
 
-  const handleDeleteEvent = (id: string) => {
-    setEvents(events.filter((e) => e.id !== id))
-    setSelectedEvent(null)
+  const handleDeleteEvent = async (id: string) => {
+    if (!confirm("Are you sure you want to delete this event?")) {
+      return
+    }
+
+    try {
+      const response = await fetch(`/api/events/${id}`, {
+        method: "DELETE",
+      })
+      if (!response.ok) {
+        throw new Error("Failed to delete event")
+      }
+      setSelectedEvent(null)
+      fetchEvents()
+    } catch (err) {
+      console.error("Error deleting event:", err)
+      alert("Failed to delete event")
+    }
   }
 
-  const handleRSVP = (eventId: string) => {
-    setEvents(
-      events.map((event) => {
-        if (event.id === eventId) {
-          const hasRSVP = event.rsvpList.includes(currentUserId)
-          return {
-            ...event,
-            rsvpList: hasRSVP
-              ? event.rsvpList.filter((id) => id !== currentUserId)
-              : [...event.rsvpList, currentUserId],
-          }
-        }
-        return event
-      }),
+  const handleRSVP = async (eventId: string, hasRSVP: boolean) => {
+    if (!currentMemberId) {
+      alert("You must be a member to RSVP")
+      return
+    }
+
+    try {
+      const response = await fetch(`/api/events/${eventId}/rsvp`, {
+        method: hasRSVP ? "DELETE" : "POST",
+      })
+      if (!response.ok) {
+        throw new Error(`Failed to ${hasRSVP ? "cancel" : "create"} RSVP`)
+      }
+      fetchEvents()
+    } catch (err) {
+      console.error("Error with RSVP:", err)
+      alert(`Failed to ${hasRSVP ? "cancel" : "create"} RSVP`)
+    }
+  }
+
+  if (status === "loading" || isLoading) {
+    return (
+      <div className="min-h-screen bg-background">
+        <Navigation />
+        <div className="flex items-center justify-center min-h-[60vh]">
+          <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        </div>
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="min-h-screen bg-background">
+        <Navigation />
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+          <div className="bg-destructive/20 border border-destructive text-destructive-foreground px-4 py-3 rounded">
+            <p className="font-bold">Error loading events</p>
+            <p>{error}</p>
+          </div>
+        </div>
+      </div>
     )
   }
 
@@ -122,7 +246,7 @@ export default function EventsPage() {
             </Button>
           </div>
 
-          {isAdmin && (
+          {(isAdmin || isMember) && (
             <Dialog open={isAddModalOpen} onOpenChange={setIsAddModalOpen}>
               <DialogTrigger asChild>
                 <Button className="chrome-button">
@@ -143,17 +267,21 @@ export default function EventsPage() {
         {/* Events Display */}
         {viewMode === "list" ? (
           <div className="space-y-4">
-            {sortedEvents.map((event) => (
-              <EventCard
-                key={event.id}
-                event={event}
-                onRSVP={handleRSVP}
-                onEdit={() => setSelectedEvent(event)}
-                onDelete={handleDeleteEvent}
-                isAdmin={isAdmin}
-                hasRSVP={event.rsvpList.includes(currentUserId)}
-              />
-            ))}
+            {sortedEvents.map((event) => {
+              const hasRSVP = event.rsvps.some((rsvp) => rsvp.member.id === currentMemberId)
+              return (
+                <EventCard
+                  key={event.id}
+                  event={event}
+                  onRSVP={handleRSVP}
+                  onEdit={() => setSelectedEvent(event)}
+                  onDelete={handleDeleteEvent}
+                  isAdmin={isAdmin}
+                  hasRSVP={hasRSVP}
+                  canRSVP={!!currentMemberId}
+                />
+              )
+            })}
           </div>
         ) : (
           <div className="space-y-8">
@@ -164,18 +292,22 @@ export default function EventsPage() {
                   {month}
                 </h2>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {monthEvents.map((event) => (
-                    <EventCard
-                      key={event.id}
-                      event={event}
-                      onRSVP={handleRSVP}
-                      onEdit={() => setSelectedEvent(event)}
-                      onDelete={handleDeleteEvent}
-                      isAdmin={isAdmin}
-                      hasRSVP={event.rsvpList.includes(currentUserId)}
-                      compact
-                    />
-                  ))}
+                  {monthEvents.map((event) => {
+                    const hasRSVP = event.rsvps.some((rsvp) => rsvp.member.id === currentMemberId)
+                    return (
+                      <EventCard
+                        key={event.id}
+                        event={event}
+                        onRSVP={handleRSVP}
+                        onEdit={() => setSelectedEvent(event)}
+                        onDelete={handleDeleteEvent}
+                        isAdmin={isAdmin}
+                        hasRSVP={hasRSVP}
+                        canRSVP={!!currentMemberId}
+                        compact
+                      />
+                    )
+                  })}
                 </div>
               </div>
             ))}
@@ -206,16 +338,17 @@ export default function EventsPage() {
 }
 
 interface EventCardProps {
-  event: Event
-  onRSVP: (eventId: string) => void
+  event: ApiEvent
+  onRSVP: (eventId: string, hasRSVP: boolean) => void
   onEdit: () => void
   onDelete: (id: string) => void
   isAdmin: boolean
   hasRSVP: boolean
+  canRSVP: boolean
   compact?: boolean
 }
 
-function EventCard({ event, onRSVP, onEdit, onDelete, isAdmin, hasRSVP, compact }: EventCardProps) {
+function EventCard({ event, onRSVP, onEdit, onDelete, isAdmin, hasRSVP, canRSVP, compact }: EventCardProps) {
   const eventTypeColors = {
     public: "bg-green-600/20 border-green-600/50 text-green-600",
     member: "bg-primary/20 border-primary/50 text-primary",
@@ -241,10 +374,10 @@ function EventCard({ event, onRSVP, onEdit, onDelete, isAdmin, hasRSVP, compact 
             <span
               className={cn(
                 "px-2 py-1 rounded text-xs font-bold uppercase tracking-wide border",
-                eventTypeColors[event.type],
+                eventTypeColors[event.type as keyof typeof eventTypeColors],
               )}
             >
-              {eventTypeLabels[event.type]}
+              {eventTypeLabels[event.type as keyof typeof eventTypeLabels]}
             </span>
           </div>
           <h3 className={cn("font-bold text-foreground", compact ? "text-lg" : "text-xl")}>{event.title}</h3>
@@ -279,20 +412,22 @@ function EventCard({ event, onRSVP, onEdit, onDelete, isAdmin, hasRSVP, compact 
         <div className="flex items-center gap-2 text-sm pt-2 border-t border-border">
           <Users className="h-4 w-4 text-muted-foreground" />
           <span className="text-muted-foreground">
-            {event.rsvpList.length} {event.rsvpList.length === 1 ? "person" : "people"} attending
+            {event.rsvps.length} {event.rsvps.length === 1 ? "person" : "people"} attending
           </span>
         </div>
       </div>
 
       <div className="flex gap-2">
-        <Button
-          variant={hasRSVP ? "default" : "outline"}
-          size="sm"
-          onClick={() => onRSVP(event.id)}
-          className={cn("flex-1", hasRSVP && "chrome-button")}
-        >
-          {hasRSVP ? "Attending" : "RSVP"}
-        </Button>
+        {canRSVP && (
+          <Button
+            variant={hasRSVP ? "default" : "outline"}
+            size="sm"
+            onClick={() => onRSVP(event.id, hasRSVP)}
+            className={cn("flex-1", hasRSVP && "chrome-button")}
+          >
+            {hasRSVP ? "Attending" : "RSVP"}
+          </Button>
+        )}
 
         {isAdmin && (
           <>
@@ -311,20 +446,17 @@ function EventCard({ event, onRSVP, onEdit, onDelete, isAdmin, hasRSVP, compact 
         )}
       </div>
 
-      {isAdmin && event.rsvpList.length > 0 && (
+      {isAdmin && event.rsvps.length > 0 && (
         <div className="mt-4 pt-4 border-t border-border">
           <p className="text-xs text-muted-foreground uppercase tracking-wide mb-2">
-            RSVP List ({event.rsvpList.length})
+            RSVP List ({event.rsvps.length})
           </p>
           <div className="flex flex-wrap gap-2">
-            {event.rsvpList.map((memberId) => {
-              const member = mockMembers.find((m) => m.id === memberId)
-              return member ? (
-                <span key={memberId} className="px-2 py-1 bg-muted rounded text-xs text-foreground">
-                  {member.roadName}
-                </span>
-              ) : null
-            })}
+            {event.rsvps.map((rsvp) => (
+              <span key={rsvp.id} className="px-2 py-1 bg-muted rounded text-xs text-foreground">
+                {rsvp.member.roadName}
+              </span>
+            ))}
           </div>
         </div>
       )}
@@ -333,18 +465,18 @@ function EventCard({ event, onRSVP, onEdit, onDelete, isAdmin, hasRSVP, compact 
 }
 
 interface EventFormProps {
-  event?: Event
+  event?: ApiEvent
   onSubmit: (event: any) => void
 }
 
 function EventForm({ event, onSubmit }: EventFormProps) {
   const [formData, setFormData] = useState({
     title: event?.title || "",
-    date: event?.date || new Date().toISOString().split("T")[0],
+    date: event?.date ? new Date(event.date).toISOString().split("T")[0] : new Date().toISOString().split("T")[0],
     time: event?.time || "19:00",
     location: event?.location || "",
     description: event?.description || "",
-    type: event?.type || ("public" as const),
+    type: event?.type || "public",
   })
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -402,10 +534,7 @@ function EventForm({ event, onSubmit }: EventFormProps) {
 
       <div className="space-y-2">
         <Label htmlFor="type">Event Type *</Label>
-        <Select
-          value={formData.type}
-          onValueChange={(value) => setFormData({ ...formData, type: value as Event["type"] })}
-        >
+        <Select value={formData.type} onValueChange={(value) => setFormData({ ...formData, type: value })}>
           <SelectTrigger id="type">
             <SelectValue />
           </SelectTrigger>
