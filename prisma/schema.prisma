@@ -1,0 +1,90 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// For production on Railway with PostgreSQL, change datasource to:
+// datasource db {
+//   provider = "postgresql"
+//   url      = env("DATABASE_URL")
+// }
+
+model User {
+  id           String   @id @default(cuid())
+  username     String   @unique
+  password     String   // Hashed password
+  role         String   // admin, member, prospect, hangaround, guest
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  member       Member?  // Optional link to member profile
+}
+
+model Member {
+  id               String    @id @default(cuid())
+  userId           String    @unique
+  user             User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  roadName         String
+  realName         String
+  phone            String
+  email            String
+  emergencyContact String?
+  joinDate         DateTime  @default(now())
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  payments         Payment[]
+  eventRsvps       EventRsvp[]
+}
+
+model Event {
+  id          String      @id @default(cuid())
+  title       String
+  date        DateTime
+  time        String
+  location    String
+  description String
+  type        String      // public, member, private
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+  rsvps       EventRsvp[]
+}
+
+model EventRsvp {
+  id        String   @id @default(cuid())
+  eventId   String
+  memberId  String
+  event     Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  member    Member   @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([eventId, memberId])
+}
+
+model Payment {
+  id        String    @id @default(cuid())
+  memberId  String
+  member    Member    @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  amount    Float
+  dueDate   DateTime
+  paidDate  DateTime?
+  status    String    // paid, pending, overdue
+  notes     String?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+}
+
+model Rule {
+  id          String   @id @default(cuid())
+  title       String
+  description String
+  category    String   // general, riding, meetings, conduct
+  order       Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
