@@ -2,7 +2,7 @@
 
 import type React from "react"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { Bike } from "lucide-react"
 import { useAuth } from "@/lib/auth-context"
@@ -22,10 +22,11 @@ export default function LoginPage() {
   const router = useRouter()
 
   // Redirect if already authenticated
-  if (isAuthenticated) {
-    router.push("/members")
-    return null
-  }
+  useEffect(() => {
+    if (isAuthenticated) {
+      router.push("/members")
+    }
+  }, [isAuthenticated, router])
 
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault()
