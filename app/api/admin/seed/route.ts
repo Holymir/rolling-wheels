@@ -6,7 +6,6 @@ const prisma = new PrismaClient()
 
 export async function GET(request: Request) {
   try {
-    // Simple security check - you can enhance this
     const { searchParams } = new URL(request.url)
     const secret = searchParams.get('secret')
 
@@ -14,9 +13,8 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    console.log('<1 Starting seed...')
+    console.log('[SEED] Starting seed...')
 
-    // Clear existing data
     await prisma.eventRsvp.deleteMany()
     await prisma.payment.deleteMany()
     await prisma.rule.deleteMany()
@@ -24,9 +22,8 @@ export async function GET(request: Request) {
     await prisma.member.deleteMany()
     await prisma.user.deleteMany()
 
-    console.log(' Cleared existing data')
+    console.log('[SEED] Cleared existing data')
 
-    // Create users with hashed passwords
     const users = await Promise.all([
       prisma.user.create({
         data: {
@@ -65,9 +62,8 @@ export async function GET(request: Request) {
       }),
     ])
 
-    console.log(' Created users')
+    console.log('[SEED] Created users')
 
-    // Create member profiles
     const members = await Promise.all([
       prisma.member.create({
         data: {
@@ -104,9 +100,8 @@ export async function GET(request: Request) {
       }),
     ])
 
-    console.log(' Created members')
+    console.log('[SEED] Created members')
 
-    // Create events
     const events = await Promise.all([
       prisma.event.create({
         data: {
@@ -140,9 +135,8 @@ export async function GET(request: Request) {
       }),
     ])
 
-    console.log(' Created events')
+    console.log('[SEED] Created events')
 
-    // Create event RSVPs
     await Promise.all([
       prisma.eventRsvp.create({
         data: {
@@ -170,9 +164,8 @@ export async function GET(request: Request) {
       }),
     ])
 
-    console.log(' Created RSVPs')
+    console.log('[SEED] Created RSVPs')
 
-    // Create payments
     await Promise.all([
       prisma.payment.create({
         data: {
@@ -214,9 +207,8 @@ export async function GET(request: Request) {
       }),
     ])
 
-    console.log(' Created payments')
+    console.log('[SEED] Created payments')
 
-    // Create club rules
     await Promise.all([
       prisma.rule.create({
         data: {
@@ -260,8 +252,8 @@ export async function GET(request: Request) {
       }),
     ])
 
-    console.log(' Created rules')
-    console.log('<‰ Seed completed successfully!')
+    console.log('[SEED] Created rules')
+    console.log('[SEED] Seed completed successfully!')
 
     return NextResponse.json({
       success: true,
@@ -273,7 +265,7 @@ export async function GET(request: Request) {
     })
 
   } catch (error) {
-    console.error('L Seed failed:', error)
+    console.error('[SEED] Seed failed:', error)
     return NextResponse.json(
       { error: 'Seed failed', details: error instanceof Error ? error.message : 'Unknown error' },
       { status: 500 }
