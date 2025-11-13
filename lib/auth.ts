@@ -47,7 +47,9 @@ export const authOptions: NextAuthOptions = {
             memberId: user.member?.id,
           }
         } catch (error) {
-          console.error('Auth error:', error)
+          console.error('❌ Database Error - Did you run setup?', error)
+          console.error('👉 Please run: npm run db:generate && npm run db:push && npm run db:seed')
+          console.error('📖 See SETUP_FIRST.md for detailed instructions')
           return null
         }
       },
