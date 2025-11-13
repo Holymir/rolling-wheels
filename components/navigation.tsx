@@ -2,12 +2,13 @@
 
 import { useState } from "react"
 import Link from "next/link"
-import { usePathname } from "next/navigation"
+import { usePathname, useRouter } from "next/navigation"
+import { signOut, useSession } from "next-auth/react"
 import { Menu, X, LogOut, Bike } from "lucide-react"
-import { useAuth } from "@/lib/auth-context"
 import { RoleBadge } from "./role-badge"
 import { Button } from "./ui/button"
 import { cn } from "@/lib/utils"
+import type { UserRole } from "@/lib/types"
 
 interface NavLink {
   href: string
@@ -41,9 +42,17 @@ const navLinks: NavLink[] = [
 export function Navigation() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const pathname = usePathname()
-  const { role, logout } = useAuth()
+  const router = useRouter()
+  const { data: session } = useSession()
+
+  const role = session?.user?.role
 
   const visibleLinks = navLinks.filter((link) => (role ? link.allowedRoles.includes(role) : false))
+
+  const handleLogout = async () => {
+    await signOut({ redirect: false })
+    router.push("/")
+  }
 
   return (
     <nav className="leather-texture bg-card border-b border-border">
@@ -77,8 +86,8 @@ export function Navigation() {
 
           {/* User Info & Logout */}
           <div className="hidden md:flex items-center gap-4">
-            {role && <RoleBadge role={role} />}
-            <Button variant="ghost" size="sm" onClick={logout} className="text-muted-foreground hover:text-foreground">
+            {role && <RoleBadge role={role as UserRole} />}
+            <Button variant="ghost" size="sm" onClick={handleLogout} className="text-muted-foreground hover:text-foreground">
               <LogOut className="h-4 w-4 mr-2" />
               Logout
             </Button>
@@ -111,12 +120,12 @@ export function Navigation() {
               </Link>
             ))}
             <div className="flex items-center justify-between pt-4 border-t border-border">
-              {role && <RoleBadge role={role} />}
+              {role && <RoleBadge role={role as UserRole} />}
               <Button
                 variant="ghost"
                 size="sm"
                 onClick={() => {
-                  logout()
+                  handleLogout()
                   setMobileMenuOpen(false)
                 }}
                 className="text-muted-foreground hover:text-foreground"
